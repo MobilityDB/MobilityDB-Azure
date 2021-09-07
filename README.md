@@ -5,7 +5,7 @@
 **Phone: (+30) 6949550129** 
 
 This work has been performed during the 4rth semester of my MSc in Big Data Management and Analytics and it consists the product of my master's thesis. This repository is a copy of the original one that can be found [here](https://github.com/JimTsesm/MobilityDB-Azure). <br> 
-A [detailed report](https://docs.mobilitydb.com/pub/MobilityDB-Azure.pdf) is available as well as the [presentation slides](https://docs.mobilitydb.com/pub/MobilityDB-Azure_presentation.pdf) of the master's thesis defense.
+A [detailed report](https://docs.mobilitydb.com/pub/MobilityDB-Azure.pdf) of the thesis is available as well as the [presentation slides](https://docs.mobilitydb.com/pub/MobilityDB-Azure_presentation.pdf) of the master's thesis defense.
 
 ## Abstract
 PostgreSQL is one of the most promising and quickly evolving relational
