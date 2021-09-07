@@ -1,0 +1,8 @@
+KubernetesDeployment/notes
+diagrams/images
+autoscaling/.idea
+autoscaling/venv
+autoscaling/__pycache__
+autoscaling/requirements_old.txt
+Progress.ods
+To be done.ods

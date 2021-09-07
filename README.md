@@ -1,8 +1,8 @@
 # Self-scalable Moving Object Databases on the Cloud: MobilityDB and Azure
 
-**Author: Dimitrios Tsesmelis**
-**Email: tsesmelis.jim007@gmail.com**
-**Phone: (+30) 6949550129**
+**Author: Dimitrios Tsesmelis** <br>
+**Email: tsesmelis.jim007@gmail.com** <br>
+**Phone: (+30) 6949550129** 
 
 This work has been performed during the 4rth semester of my MSc in Big Data Management and Analytics and it consists the product of my master's thesis. This repository is a copy of the original one that can be found [here](https://github.com/JimTsesm/MobilityDB-Azure). <br> 
 A [detailed report](https://docs.mobilitydb.com/pub/MobilityDB-Azure.pdf) is available as well as the [presentation slides](https://docs.mobilitydb.com/pub/MobilityDB-Azure_presentation.pdf) of the master's thesis defense.

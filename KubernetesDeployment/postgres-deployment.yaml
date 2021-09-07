@@ -1,0 +1,79 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: citus-master
+spec:
+  selector:
+    matchLabels:
+      app: citus-master
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: citus-master
+    spec:
+    #Assign Citus coordinator to master node (needs to have untainted master node first)
+      nodeSelector:
+        dedicated: master
+      containers:
+        - name: citus
+          image: dimitris007/mobilitydb:citus10_pgcron
+          imagePullPolicy: "IfNotPresent"
+          args:
+            - -c
+            - max_locks_per_transaction=128
+            - -c
+            - shared_preload_libraries=citus,postgis-2.5.so,pg_stat_statements,pg_cron
+            - -c
+            - cron.database_name=$(POSTGRES_DB)
+            - -c
+            - ssl=on
+            - -c
+            - ssl_cert_file=/etc/postgresql-secrets-vol/server.crt
+            - -c
+            - ssl_key_file=/etc/postgresql-secrets-vol/server.key
+          ports:
+            - containerPort: 5432
+          lifecycle:
+            postStart:
+              exec:
+              #Command to be executed after the initialization of the worker Pod: 1) Create Extensions (pg_stat_statements to get query exec times and pg_cron to create monitoring jobs) 2) Create sessions_log table 3) Create function to monitor sessions every seconds 4) Create pg_cron job to execute the function every minute 4) Create pg_cron job to clear the sessions_log table every 30 minutes
+                command: ["/bin/sh", "-c", "sleep 2; psql -U \"$( cat /etc/postgresql-secrets-vol/params/username )\" -d \"$( cat /etc/postgresql-secrets-vol/params/db )\"  --command=\"CREATE EXTENSION IF NOT EXISTS citus CASCADE;CREATE EXTENSION IF NOT EXISTS MobilityDB CASCADE;CREATE EXTENSION IF NOT EXISTS pg_stat_statements;CREATE EXTENSION IF NOT EXISTS pg_cron;CREATE EXTENSION IF NOT EXISTS dblink;\"; psql -U \"$( cat /etc/postgresql-secrets-vol/params/username )\" -d \"$( cat /etc/postgresql-secrets-vol/params/db )\"  --command=\"CREATE TABLE sessions_log(time timestamp with time zone, users_number integer);\"; psql -U \"$( cat /etc/postgresql-secrets-vol/params/username )\" -d \"$( cat /etc/postgresql-secrets-vol/params/db )\"  --command=\"CREATE OR REPLACE FUNCTION do_every_second(run_time interval default '60 seconds') RETURNS bool AS ' DECLARE end_time timestamptz := now() + run_time; BEGIN WHILE clock_timestamp() < end_time LOOP PERFORM FROM dblink(''host=localhost port=5432 dbname=$( cat /etc/postgresql-secrets-vol/params/db ) user=$( cat /etc/postgresql-secrets-vol/params/username )'', ''INSERT INTO sessions_log SELECT clock_timestamp(), count(*) FROM  (SELECT DISTINCT Cast(usesysid AS INTEGER), client_port FROM   pg_stat_activity WHERE  client_port IS NOT NULL AND usesysid IS NOT NULL) CURRENT_SESSION_USERS;'') AS (num_rows text); PERFORM pg_sleep(1);  END LOOP; RETURN true; END; ' LANGUAGE plpgsql; SELECT cron.schedule('* * * * *', 'SELECT do_every_second()'); SELECT cron.schedule('0,30 * * * *', 'DELETE FROM sessions_log WHERE time < now() - interval ''30 minutes''');\";"]
+          env:
+          - name: POSTGRES_DB
+            valueFrom:
+              secretKeyRef:
+                name: postgres-secrets-params
+                key: db
+          - name: POSTGRES_USER
+            valueFrom:
+              secretKeyRef:
+                name: postgres-secrets-params
+                key: username
+          - name: POSTGRES_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: postgres-secrets-params
+                key: password
+          volumeMounts:
+            - mountPath: /var/lib/postgresql/data
+              name: postgredb
+            - mountPath: /etc/postgresql-secrets-vol
+              name: secret-vol
+            - mountPath: /etc/postgresql-secrets-vol/params
+              name: secret-vol-params
+      securityContext:
+        runAsUser: 0
+        supplementalGroups: [999,1000]
+        fsGroup: 999
+      volumes:
+        - name: postgredb
+          persistentVolumeClaim:
+            claimName: postgres-pv-claim-coordinator
+        - name: secret-vol
+          secret:
+            secretName: postgresql-secrets 
+            defaultMode: 0640
+        - name: secret-vol-params
+          secret:
+            secretName: postgres-secrets-params 

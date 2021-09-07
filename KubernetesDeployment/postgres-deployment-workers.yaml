@@ -1,0 +1,104 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: citus-worker
+spec:
+  selector:
+    matchLabels:
+      app: citus-workers
+  serviceName: citus-workers
+  replicas: 3
+  selector:
+    matchLabels:
+      app: citus-workers
+  template:
+    metadata:
+      labels:
+        app: citus-workers
+    spec:
+    #Add Node Affinity to equally distribute the replicas in the Cluster's nodes.
+    #Assign explicitly 1 replica per node with requiredDuringSchedulingIgnoredDuringExecution
+    #Do not allow to assign Worker nodes to the Control Plane node
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchExpressions:
+                  - key: "app"
+                    operator: In
+                    values:
+                    - citus-workers
+                    - citus-master
+              topologyKey: "kubernetes.io/hostname"
+      containers:
+        - name: citus-worker
+          image: dimitris007/mobilitydb:citus10
+          imagePullPolicy: "IfNotPresent"
+          args:
+            - -c
+            - max_locks_per_transaction=128
+            - -c
+            - shared_preload_libraries=citus,postgis-2.5.so
+            - -c
+            - ssl=on
+            - -c
+            - ssl_cert_file=/etc/postgresql-secrets-vol/server.crt
+            - -c
+            - ssl_key_file=/etc/postgresql-secrets-vol/server.key
+            - -c
+            - max_connections=500
+          ports:
+            - containerPort: 5432
+          lifecycle:
+            postStart:
+              exec:
+              #Commands to be executed after the initialization of the worker Pod: 1) Configure pg_hba.conf to allow connection with the master node, 2) Create Extensions, 3) Refresh the server to
+              #apply the changes to pg_hba.conf file, 4) Add the worker node to citus cluster by using $POD_IP env variable, which is defined below
+                command: ["/bin/sh", "-c", "sleep 7;printf \"local all all trust\nhost all all 127.0.0.1/32 trust\nhost all all ::1/128 trust\nhost all all 0.0.0.0/0 trust\n\" > /var/lib/postgresql/data/pg_hba.conf; psql -U \"$( cat /etc/postgresql-secrets-vol/params/username )\" -d \"$( cat /etc/postgresql-secrets-vol/params/db )\"  --command=\"CREATE EXTENSION IF NOT EXISTS citus CASCADE;\"; psql -U \"$( cat /etc/postgresql-secrets-vol/params/username )\" -d \"$( cat /etc/postgresql-secrets-vol/params/db )\"  --command=\"CREATE EXTENSION IF NOT EXISTS MobilityDB CASCADE;\"; psql -U \"$( cat /etc/postgresql-secrets-vol/params/username )\" -d \"$( cat /etc/postgresql-secrets-vol/params/db )\"  --command=\"select pg_reload_conf();\"; PGPASSWORD=\"$( cat /etc/postgresql-secrets-vol/params/password )\" psql --host=citus-master -U \"$( cat /etc/postgresql-secrets-vol/params/username )\" -d \"$( cat /etc/postgresql-secrets-vol/params/db )\" --command=\"SELECT * from master_add_node('\"$POD_IP\"', 5432);\";"]
+#            preStop:
+#              exec:
+              #Commands to be executed before terminating the worker Pod: 1)Unregister current Worker from Citus cluster by using $POD_ID env variable
+#                command: ["/bin/sh", "-c", "PGPASSWORD=\"$( cat /etc/postgresql-secrets-vol/params/password )\" psql --host=citus-master -U \"$( cat /etc/postgresql-secrets-vol/params/username )\" -d \"$( cat /etc/postgresql-secrets-vol/params/db )\" --command=\"SELECT * from master_remove_node('\"$POD_IP\"', 5432);\";"]
+          env:
+          - name: POSTGRES_DB
+            valueFrom:
+              secretKeyRef:
+                name: postgres-secrets-params
+                key: db
+          - name: POSTGRES_USER
+            valueFrom:
+              secretKeyRef:
+                name: postgres-secrets-params
+                key: username
+          - name: POSTGRES_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: postgres-secrets-params
+                key: password
+          - name: POD_IP
+            valueFrom:
+              fieldRef:
+                fieldPath: status.podIP
+          volumeMounts:
+            - mountPath: /var/lib/postgresql/data
+              name: postgredb
+            - mountPath: /etc/postgresql-secrets-vol
+              name: secret-vol
+            - mountPath: /etc/postgresql-secrets-vol/params
+              name: secret-vol-params
+      securityContext:
+        runAsUser: 0
+        supplementalGroups: [999,1000]
+        fsGroup: 999
+      volumes:
+        - name: postgredb
+          persistentVolumeClaim:
+            claimName: postgres-pv-claim
+        - name: secret-vol
+          secret:
+            secretName: postgresql-secrets 
+            defaultMode: 0640
+        - name: secret-vol-params
+          secret:
+            secretName: postgres-secrets-params
+
